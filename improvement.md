@@ -14,10 +14,11 @@ Prefer short, generic names. Avoid verbose camelCase compound names.
 
 | Prefer | Avoid |
 |--------|-------|
-| `_doc`, `_record` | `transcriptDoc`, `fileRecord` |
+| `_doc`, `_record`, `__doc`, `__record` | `transcriptDoc`, `fileRecord` |
 | `response`, `result` | `chatResponse`, `searchResult` |
 | `input`, `output` | `userInput`, `processedOutput` |
 | `params`, `options` | `searchParams`, `queryOptions` |
+| `mapper$file.format()`, `format.input()` | `map_file()`, `formatOutput()`, `formatTranscript()` |
 
 ### Disambiguation with `$` prefix
 
@@ -267,6 +268,34 @@ Future sources (Confluence, Slack, DOCX, etc.) just need a new extractor + parse
 
 ---
 
+## 4.5. Mappers
+
+Mappers **transform external data structures** (often camelCase) into our **internal domain objects** (strictly snake_case). They isolate data transformation logic from parsers and services.
+
+### Structure
+
+```
+src/mappers/
+├── mapper.interface.ts                # Optional generic interface
+├── microsoft/
+│   ├── transcript.mapper.ts           # RawTranscript → TranscriptMetadata
+│   └── dl.mapper.ts                   # RawDLData → DLMetadata
+├── pdf/
+│   └── pdf.mapper.ts                  # PDF metadata transform
+└── index.ts                           # mappers.microsoft.transcript / .dl
+```
+
+### Usage
+
+```typescript
+import { mappers } from '@mappers';
+
+// Inside a parser or service
+const metadata = mappers.microsoft.transcript.format.input(rawGraphData);
+```
+
+---
+
 ## 5. Entity Services
 
 Thin entity-first wrappers composing store + model primitives. The **only public API** consumers use.
@@ -396,6 +425,8 @@ Both `@module/*` (subpath imports) and `@module` (index imports) for every modul
       "@extractors":   ["src/extractors"],
       "@parsers/*":    ["src/parsers/*"],
       "@parsers":      ["src/parsers"],
+      "@mappers/*":    ["src/mappers/*"],
+      "@mappers":      ["src/mappers"],
       "@cron/*":       ["src/cron/*"],
       "@cron":         ["src/cron"],
       "@services/*":   ["src/services/*"],
@@ -420,6 +451,7 @@ Both `@module/*` (subpath imports) and `@module` (index imports) for every modul
 import { models } from '@models';
 import { extractors } from '@extractors';
 import { parsers } from '@parsers';
+import { mappers } from '@mappers';
 import { cron } from '@cron';
 
 // Direct subpath imports (for internals / specific files)
@@ -517,6 +549,12 @@ src/
 │   ├── pdf.parser.ts
 │   ├── text-chunker.ts
 │   └── index.ts
+├── mappers/
+│   ├── mapper.interface.ts
+│   ├── microsoft/
+│   │   ├── transcript.mapper.ts
+│   │   └── dl.mapper.ts
+│   └── index.ts
 ├── services/
 │   ├── documents.ts
 │   ├── files.ts
@@ -601,13 +639,14 @@ LOG_LEVEL=info
 
 1. **TSConfig** — update path aliases
 2. **Types & Enums** — split into domain files, re-export from index
-3. **Models** — `Embedder` + `ChatModel` interfaces, OpenAI impls, factories, namespace export
-4. **Store interfaces** — `Store`, `VectorStore`, `MetaStore`
-5. **MongoStore** — split into `MongoVectorStore` + `MongoMetaStore`
-6. **PgStore** — split into `PgVectorStore` + `PgMetaStore`
-7. **Entity services** — `documents.ts`, `files.ts`, `sync-state.ts`
-8. **Extractors** — refactor from current `microsoft/*.ts` + `pdf.ingest.service.ts`
-9. **Parsers** — refactor existing parsers + extract `text-chunker`
-10. **Cron** — refactor into entity-first pattern with `register()` + `run()`
-11. **Consumer refactor** — update `ingest.service`, `pdf.ingest.service`, `chat.service`, APIs, scripts
-12. **Verify** — `bunx tsc --noEmit`, manual testing
+3. **Mappers** — create mapper functions/interfaces
+4. **Models** — `Embedder` + `ChatModel` interfaces, OpenAI impls, factories, namespace export
+5. **Store interfaces** — `Store`, `VectorStore`, `MetaStore`
+6. **MongoStore** — split into `MongoVectorStore` + `MongoMetaStore`
+7. **PgStore** — split into `PgVectorStore` + `PgMetaStore`
+8. **Entity services** — `documents.ts`, `files.ts`, `sync-state.ts`
+9. **Extractors** — refactor from current `microsoft/*.ts` + `pdf.ingest.service.ts`
+10. **Parsers** — refactor existing parsers + extract `text-chunker` (use mappers)
+11. **Cron** — refactor into entity-first pattern with `register()` + `run()`
+12. **Consumer refactor** — update `ingest.service`, `pdf.ingest.service`, `chat.service`, APIs, scripts
+13. **Verify** — `bunx tsc --noEmit`, manual testing
