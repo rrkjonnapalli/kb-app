@@ -1,23 +1,25 @@
-import { registerJob } from '@cron/scheduler';
-import { ingestDistributionLists } from '@services/ingest.service';
-import { JobName } from '@enums/index';
+import { cron } from '@elysiajs/cron';
+import { ingestion } from '@services/ingestion';
+import { JobName } from '@enums/jobs.enum';
 import { logger } from '@utils/log.util';
 
 /**
- * Register the daily distribution list sync cron job.
- * Runs daily at 3:00 AM. Does a full refresh of all DLs.
+ * Distribution list ingestion cron plugin.
+ * Runs daily at 3 AM — full refresh of all DLs (delete + re-ingest).
  */
-export function registerDLCron(): void {
-    registerJob(
-        JobName.INGEST_DLS,
-        '0 3 * * *', // Daily at 3 AM
-        async () => {
-            logger.info('Cron: starting DL ingestion');
-            const result = await ingestDistributionLists();
+export const cron$dl = cron({
+    name: JobName.INGEST_DLS,
+    pattern: '0 3 * * *',
+    async run() {
+        logger.info('Cron: starting DL ingestion');
+        try {
+            const result = await ingestion.dls.run();
             logger.info(
                 { processed: result.processed, errors: result.errors },
                 'Cron: DL ingestion complete',
             );
-        },
-    );
-}
+        } catch (error) {
+            logger.error({ job: JobName.INGEST_DLS, error }, 'Cron: DL ingestion failed');
+        }
+    },
+});

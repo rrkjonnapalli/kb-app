@@ -8,7 +8,7 @@ let pool: Pool | null = null;
  * Get or create the PostgreSQL connection pool singleton.
  * @returns The shared Pool instance
  */
-export function getPgPool(): Pool {
+export function get_pg(): Pool {
     if (!pool) {
         const config: PoolConfig = {
             connectionString: env.POSTGRES_URL,
@@ -25,8 +25,8 @@ export function getPgPool(): Pool {
 /**
  * Connect to PostgreSQL (verify the pool is reachable).
  */
-export async function connectPg(): Promise<void> {
-    const p = getPgPool();
+export async function connect_pg(): Promise<void> {
+    const p = get_pg();
     const client = await p.connect();
     client.release();
     logger.info('Connected to PostgreSQL');
@@ -35,7 +35,7 @@ export async function connectPg(): Promise<void> {
 /**
  * Close the PostgreSQL connection pool gracefully.
  */
-export async function closePg(): Promise<void> {
+export async function close_pg(): Promise<void> {
     if (pool) {
         await pool.end();
         pool = null;

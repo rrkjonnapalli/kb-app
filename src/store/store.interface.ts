@@ -1,71 +1,65 @@
-import type { FileStatusValue } from '@enums/index';
-import type {
-    KnowledgeDocument,
-    SearchOptions,
-    SearchResult,
-    SearchFilters,
-    FileRecord,
-} from '@app-types/index';
+import type { SearchOptions, SearchResult, SearchFilters } from '@app-types/search.types';
 
 /**
- * Store interface — unified contract for all data operations.
- *
- * Both MongoStore and PgStore implement this interface identically,
- * so consumers can call `getStore()` and never know which backend is in use.
+ * Store interface — lifecycle management for a storage backend.
+ * Provides access to segregated VectorStore and MetaStore instances.
  */
 export interface Store {
-    // ─── Lifecycle ───────────────────────────────────────────────────
-    /** Open connection pool / client. */
+    /** Open connection pool / client */
     connect(): Promise<void>;
-    /** Close all connections gracefully. */
+
+    /** Close all connections gracefully */
     close(): Promise<void>;
-    /** Create tables / indexes / vector search indexes as needed. */
-    ensureSchema(): Promise<void>;
 
-    // ─── Vector Operations ───────────────────────────────────────────
-    /**
-     * Embed and store documents in the knowledge base.
-     * @returns Array of inserted document IDs.
-     */
-    addDocuments(docs: KnowledgeDocument[]): Promise<string[]>;
+    /** Create tables / indexes / vector search indexes as needed */
+    setup(dimensions: number): Promise<void>;
 
-    /**
-     * Search the knowledge base for documents similar to the query.
-     * @returns Array of SearchResult (document + score).
-     */
-    searchDocuments(query: string, options?: SearchOptions): Promise<SearchResult[]>;
+    /** Get the vector store instance for a given collection/table */
+    get_vector_store(name: string): VectorStore;
 
-    /**
-     * Delete documents matching the given filter.
-     * @returns Number of documents deleted.
-     */
-    deleteDocuments(filter: SearchFilters): Promise<number>;
+    /** Get a typed meta store for a given collection/table */
+    get_meta_store<T extends Record<string, unknown>>(name: string): MetaStore<T>;
+}
 
-    // ─── File Records ────────────────────────────────────────────────
-    /**
-     * Create a file record for tracking PDF ingestion status.
-     * @returns The new file record ID.
-     */
-    createFileRecord(
-        filename: string,
-        source: 'upload' | 'url',
-        originalUrl?: string,
-    ): Promise<string>;
+/**
+ * VectorStore interface — raw embedding storage and similarity search.
+ * Does NOT perform embedding — receives pre-computed vectors.
+ */
+export interface VectorStore {
+    /** Insert documents with pre-computed embeddings. Returns inserted IDs. */
+    insert(docs: {
+        content: string;
+        embedding: number[];
+        metadata: Record<string, unknown>;
+    }[]): Promise<string[]>;
 
-    /** Get a file record by ID. */
-    getFileRecord(fileId: string): Promise<FileRecord | null>;
+    /** Search by pre-computed embedding vector */
+    search(embedding: number[], options?: SearchOptions): Promise<SearchResult[]>;
 
-    /** Update file processing status. */
-    updateFileStatus(
-        fileId: string,
-        status: FileStatusValue,
-        extra?: Partial<Pick<FileRecord, 'error' | 'chunks_count'>>,
-    ): Promise<void>;
+    /** Delete documents matching filter. Returns count deleted. */
+    delete(filter: SearchFilters): Promise<number>;
+}
 
-    // ─── Sync State ──────────────────────────────────────────────────
-    /** Get last successful sync time for a source type. Falls back to 24h ago. */
-    getLastSyncTime(sourceType: string): Promise<Date>;
+/**
+ * MetaStore interface — generic CRUD for any entity type.
+ * Each entity (files, sync_state, etc.) gets its own MetaStore instance.
+ */
+export interface MetaStore<T extends Record<string, unknown>> {
+    /** Insert a record, return its ID */
+    insert(record: Partial<T>): Promise<string>;
 
-    /** Update last successful sync time for a source type. */
-    updateSyncTime(sourceType: string): Promise<void>;
+    /** Find a record by ID */
+    find_by_id(id: string): Promise<T | null>;
+
+    /** Find a single record matching the filter */
+    find_one(filter: Partial<T>): Promise<T | null>;
+
+    /** Update a record by ID */
+    update(id: string, data: Partial<T>): Promise<void>;
+
+    /** Delete a record by ID */
+    delete(id: string): Promise<void>;
+
+    /** Upsert: update if matching filter exists, insert otherwise */
+    upsert(filter: Partial<T>, data: Partial<T>): Promise<void>;
 }

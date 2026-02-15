@@ -1,16 +1,26 @@
-import type { KnowledgeDocument, RawDLData } from '@app-types/index';
+import type { KnowledgeDocument } from '@app-types/document.types';
+import type { RawDLData } from '@app-types/microsoft.types';
+import type { Parser } from '@parsers/parser.interface';
+
+/**
+ * Distribution list parser — converts raw DL data into a single KnowledgeDocument.
+ * Each DL becomes one document (they're small enough).
+ */
+export class DLParser implements Parser<RawDLData> {
+    /** Parse a raw DL into a knowledge document */
+    parse(dl: RawDLData): KnowledgeDocument[] {
+        return [parse_distribution_list(dl)];
+    }
+}
 
 /**
  * Parse a raw distribution list into a KnowledgeDocument.
- * Each DL becomes a single document (they're small enough).
- *
- * Content format:
- * "Distribution List: {name} ({email}). Description: {description}. Members: {member1} ({role}), ..."
+ * Each DL becomes a single document.
  *
  * @param dl - The raw DL data from Graph API
  * @returns A single KnowledgeDocument representing the distribution list
  */
-export function parseDistributionList(dl: RawDLData): KnowledgeDocument {
+export function parse_distribution_list(dl: RawDLData): KnowledgeDocument {
     const memberList = dl.members
         .map((m) => {
             const role = m.jobTitle ? ` (${m.jobTitle})` : '';

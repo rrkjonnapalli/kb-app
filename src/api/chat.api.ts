@@ -9,11 +9,10 @@ import { logger } from '@utils/log.util';
  * Routes:
  * - POST /api/chat — query the knowledge base with optional filters
  */
-export const chatApi = new Elysia({ prefix: '/api/chat' }).post(
+export const api$chat = new Elysia({ prefix: '/api/chat' }).post(
     '/',
     async ({ body }) => {
         logger.info({ query: body.query }, 'Chat API request');
-
         const result = await chat(body.query, body.filters);
         return result;
     },
@@ -23,7 +22,11 @@ export const chatApi = new Elysia({ prefix: '/api/chat' }).post(
             filters: t.Optional(
                 t.Object({
                     source_type: t.Optional(
-                        t.Union([t.Literal('transcript'), t.Literal('distribution_list')], {
+                        t.Union([
+                            t.Literal('transcript'),
+                            t.Literal('distribution_list'),
+                            t.Literal('pdf'),
+                        ], {
                             description: 'Filter by source type',
                         }),
                     ),
@@ -32,6 +35,9 @@ export const chatApi = new Elysia({ prefix: '/api/chat' }).post(
                     ),
                     dl_name: t.Optional(
                         t.String({ description: 'Filter by distribution list name' }),
+                    ),
+                    pdf_filename: t.Optional(
+                        t.String({ description: 'Filter by PDF filename' }),
                     ),
                     date_from: t.Optional(
                         t.String({ description: 'Filter by date range start (ISO)' }),
@@ -45,7 +51,7 @@ export const chatApi = new Elysia({ prefix: '/api/chat' }).post(
         detail: {
             summary: 'Query the knowledge base',
             description:
-                'Ask a question against meeting transcripts and distribution lists using RAG. Returns an answer with source references.',
+                'Ask a question against meeting transcripts, distribution lists, and PDFs using RAG. Returns an answer with source references.',
             tags: ['Chat'],
         },
     },

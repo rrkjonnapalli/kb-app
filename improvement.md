@@ -8,6 +8,38 @@ Entity-first, pluggable redesign of the KB RAG service. Every component follows 
 
 ## 0. Coding Conventions
 
+### File Naming
+
+File names use **dot-separated segments**. Each segment uses `snake_case` if multi-word. **No hyphens ever**.
+
+```
+✅ transcript.parser.ts
+✅ chat_model.interface.ts
+✅ mongo.vector_store.ts
+✅ source_type.enum.ts
+✅ sync_state.service.ts
+✅ text_chunker.ts
+✅ create_index.ts
+
+❌ chat-model.interface.ts
+❌ mongo.vector-store.ts
+❌ source-type.enum.ts
+❌ sync-state.ts
+❌ text-chunker.ts
+❌ create-index.ts
+```
+
+### Class / Type Naming
+
+Acronyms and system names stay **uppercase** — PDF, PG are not words:
+
+```
+✅ PDFParser, PDFExtractor, PGStore, PGVectorStore
+❌ PdfParser, PdfExtractor, PgStore, PgVectorStore
+
+✅ MongoStore — "Mongo" is a word
+```
+
 ### Variable naming
 
 Prefer short, generic names. Avoid verbose camelCase compound names.
@@ -29,11 +61,30 @@ When you **must** distinguish between entities of the same shape, use `$`-prefix
 const doc$file = ...;
 const doc$task = ...;
 const extractor$dl = ...;
+const store$vector = store.getVectorStore(...);
+const store$meta = store.getMetaStore(...);
 
 // ❌ Bad
 const fileDoc = ...;
 const taskDoc = ...;
 const dlExtractor = ...;
+const vectorStore = ...;   // use store$vector
+const metaStore = ...;     // use store$meta
+```
+
+### Temporary / shadow variables
+
+When a name is already taken, use `_prefix`, `records`, or a domain noun — never compound camelCase:
+
+```typescript
+// ✅ Good
+const _docs = parsers.transcripts.parse(raw);
+const records = docs.map(...)
+const documents = ...;
+
+// ❌ Bad (unless no other option)
+const storedDocs = ...;
+const mappedDocuments = ...;
 ```
 
 ### snake_case everywhere (except external packages)
@@ -140,9 +191,9 @@ src/models/
 │   ├── ollama.embedder.ts             # Ollama implementation (future)
 │   └── index.ts                       # getEmbedder() factory
 ├── chat/
-│   ├── chat-model.interface.ts        # ChatModel interface
-│   ├── openai.chat-model.ts           # Azure OpenAI / OpenAI implementation
-│   ├── ollama.chat-model.ts           # Ollama implementation (future)
+│   ├── chat_model.interface.ts        # ChatModel interface
+│   ├── openai.chat_model.ts           # Azure OpenAI / OpenAI implementation
+│   ├── ollama.chat_model.ts           # Ollama implementation (future)
 │   └── index.ts                       # getChatModel() factory
 └── index.ts                           # models.embed / models.chat
 ```
@@ -242,7 +293,7 @@ src/parsers/
 ├── transcript.parser.ts               # VTT → time-chunked docs with speaker metadata
 ├── dl.parser.ts                       # DL data → single doc with member metadata
 ├── pdf.parser.ts                      # PDF buffer → text → overlapping chunks
-├── text-chunker.ts                    # Shared: chunk text with overlap + sentence boundaries
+├── text_chunker.ts                    # Shared: chunk text with overlap + sentence boundaries
 └── index.ts                           # parsers.transcripts / .dls / .pdf
 ```
 
@@ -261,7 +312,7 @@ const docs = parsers.pdf.parse(rawPdf);
 ```
 extractors.transcripts → parsers.transcripts
 extractors.dls         → parsers.dls
-extractors.pdf         → parsers.pdf (uses text-chunker)
+extractors.pdf         → parsers.pdf (uses text_chunker)
 ```
 
 Future sources (Confluence, Slack, DOCX, etc.) just need a new extractor + parser pair.
@@ -298,11 +349,34 @@ const metadata = mappers.microsoft.transcript.format.input(rawGraphData);
 
 ## 5. Entity Services
 
-Thin entity-first wrappers composing store + model primitives. The **only public API** consumers use.
+Entity-first wrappers composing store + model primitives. The **only public API** consumers use.
+
+### Base service pattern
+
+Generic CRUD operations are written **once** in a base, then extended per entity.
+Do **not** duplicate `insert` / `find_by_id` / `update` / `delete` in each entity file.
+
+```typescript
+// services/base.service.ts
+function create_entity_service<T>(collection: string) {
+  const meta = () => store.getMetaStore<T>(collection);
+  return {
+    insert:     (record: Partial<T>) => meta().insert(record),
+    find_by_id: (id: string) => meta().find_by_id(id),
+    find_one:   (filter: Partial<T>) => meta().find_one(filter),
+    update:     (id: string, data: Partial<T>) => meta().update(id, data),
+    delete:     (id: string) => meta().delete(id),
+    upsert:     (filter: Partial<T>, data: Partial<T>) => meta().upsert(filter, data),
+  };
+}
+```
+
+Entity services extend the base and add domain-specific methods:
 
 ### `services/documents.ts`
 
 ```typescript
+// Composes VectorStore + Embedder — NOT a thin CRUD proxy
 export const documents = {
   async add(docs: KnowledgeDocument[]): Promise<string[]>,
   async search(query: string, options?: SearchOptions): Promise<SearchResult[]>,
@@ -313,21 +387,41 @@ export const documents = {
 ### `services/files.ts`
 
 ```typescript
+// Extends base service — only add domain-specific methods on top
 export const files = {
-  async insert(record: Partial<FileRecord>): Promise<string>,
-  async find_by_id(id: string): Promise<FileRecord | null>,
-  async update(id: string, data: Partial<FileRecord>): Promise<void>,
+  ...create_entity_service<FileRecord>(Collections.FILES),
+  // domain-specific additions only:
 };
 ```
 
-### `services/sync-state.ts`
+### `services/sync_state.service.ts`
 
 ```typescript
 export const sync_state = {
-  async find_one(filter: Partial<SyncState>): Promise<SyncState | null>,
-  async upsert(filter: Partial<SyncState>, data: Partial<SyncState>): Promise<void>,
+  ...create_entity_service<SyncState>(Collections.SYNC_STATE),
+  // domain-specific:
   async get_last_sync(source_type: string): Promise<Date>,
 };
+```
+
+### Ingestion services (folder)
+
+Ingestion orchestrates extract → parse → store. Lives in its own subfolder:
+
+```
+src/services/ingestion/
+├── base.ingest.ts                     # Shared ingestion utilities / base
+├── transcript.ingest.ts               # Transcript pipeline: extract → parse → embed → store
+├── dl.ingest.ts                       # DL pipeline
+├── pdf.ingest.ts                      # PDF pipeline
+└── index.ts                           # ingestion.transcripts / .dls / .pdf
+```
+
+```typescript
+import { ingestion } from '@services/ingestion';
+
+await ingestion.transcripts.run();
+await ingestion.pdf.run({ buffer, file_id });
 ```
 
 ---
@@ -397,8 +491,8 @@ src/types/
 ```
 src/enums/
 ├── collections.enum.ts                # Collections (knowledge_base, sync_state, files)
-├── source-type.enum.ts                # SourceType (transcript, distribution_list, pdf)
-├── file-status.enum.ts                # FileStatus (pending, processing, completed, failed)
+├── source_type.enum.ts                # SourceType (transcript, distribution_list, pdf)
+├── file_status.enum.ts                # FileStatus (pending, processing, completed, failed)
 ├── jobs.enum.ts                       # JobName (ingest-transcripts, ingest-dls)
 └── index.ts                           # Re-exports everything
 ```
@@ -465,11 +559,11 @@ import type { FileRecord } from '@app-types/file.types';
 ## 9. Full Consumer Example
 
 ```typescript
-// ingest.service.ts — transcript ingestion
+// services/ingestion/transcript.ingest.ts — transcript ingestion
 import { extractors } from '@extractors';
 import { parsers } from '@parsers';
 import { documents } from '@services/documents';
-import { sync_state } from '@services/sync-state';
+import { sync_state } from '@services/sync_state.service';
 
 const since = await sync_state.get_last_sync('transcript');
 const _raw = await extractors.transcripts.extract({ since });
@@ -481,7 +575,7 @@ await sync_state.upsert({ job_name: 'transcript' }, { last_success: new Date() }
 ```
 
 ```typescript
-// pdf.ingest.service.ts — PDF pipeline
+// services/ingestion/pdf.ingest.ts — PDF pipeline
 import { extractors } from '@extractors';
 import { parsers } from '@parsers';
 import { documents } from '@services/documents';
@@ -518,20 +612,20 @@ src/
 │   │   ├── openai.embedder.ts
 │   │   └── index.ts
 │   ├── chat/
-│   │   ├── chat-model.interface.ts
-│   │   ├── openai.chat-model.ts
+│   │   ├── chat_model.interface.ts
+│   │   ├── openai.chat_model.ts
 │   │   └── index.ts
 │   └── index.ts
 ├── store/
 │   ├── store.interface.ts
 │   ├── mongo/
 │   │   ├── mongo.store.ts
-│   │   ├── mongo.vector-store.ts
-│   │   └── mongo.meta-store.ts
+│   │   ├── mongo.vector_store.ts
+│   │   └── mongo.meta_store.ts
 │   ├── pg/
 │   │   ├── pg.store.ts
-│   │   ├── pg.vector-store.ts
-│   │   └── pg.meta-store.ts
+│   │   ├── pg.vector_store.ts
+│   │   └── pg.meta_store.ts
 │   └── index.ts
 ├── extractors/
 │   ├── extractor.interface.ts
@@ -547,7 +641,7 @@ src/
 │   ├── transcript.parser.ts
 │   ├── dl.parser.ts
 │   ├── pdf.parser.ts
-│   ├── text-chunker.ts
+│   ├── text_chunker.ts
 │   └── index.ts
 ├── mappers/
 │   ├── mapper.interface.ts
@@ -556,12 +650,18 @@ src/
 │   │   └── dl.mapper.ts
 │   └── index.ts
 ├── services/
+│   ├── base.service.ts
 │   ├── documents.ts
 │   ├── files.ts
-│   ├── sync-state.ts
+│   ├── sync_state.service.ts
 │   ├── chat.service.ts
-│   ├── ingest.service.ts
-│   └── pdf.ingest.service.ts
+│   ├── ingestion/
+│   │   ├── base.ingest.ts
+│   │   ├── transcript.ingest.ts
+│   │   ├── dl.ingest.ts
+│   │   ├── pdf.ingest.ts
+│   │   └── index.ts
+│   └── index.ts
 ├── cron/
 │   ├── cron.interface.ts
 │   ├── transcript.cron.ts
@@ -583,8 +683,8 @@ src/
 │   └── index.ts
 ├── enums/
 │   ├── collections.enum.ts
-│   ├── source-type.enum.ts
-│   ├── file-status.enum.ts
+│   ├── source_type.enum.ts
+│   ├── file_status.enum.ts
 │   ├── jobs.enum.ts
 │   └── index.ts
 ├── utils/
@@ -644,7 +744,7 @@ LOG_LEVEL=info
 5. **Store interfaces** — `Store`, `VectorStore`, `MetaStore`
 6. **MongoStore** — split into `MongoVectorStore` + `MongoMetaStore`
 7. **PgStore** — split into `PgVectorStore` + `PgMetaStore`
-8. **Entity services** — `documents.ts`, `files.ts`, `sync-state.ts`
+8. **Entity services** — `base.service.ts`, `documents.ts`, `files.ts`, `sync_state.service.ts`, `ingestion/`
 9. **Extractors** — refactor from current `microsoft/*.ts` + `pdf.ingest.service.ts`
 10. **Parsers** — refactor existing parsers + extract `text-chunker` (use mappers)
 11. **Cron** — refactor into entity-first pattern with `register()` + `run()`

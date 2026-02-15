@@ -1,16 +1,30 @@
 -- ============================================================
 -- PostgreSQL + pgvector setup for Knowledge Base RAG Service
+--
+-- NOTE: The application creates these tables automatically via
+--       store.setup(dimensions) at startup. This file is a
+--       reference / manual bootstrap script only.
+--
+-- The vector dimension defaults to 1024 below. Adjust to match
+-- your embedding model output (set via EMBED_DIMENSIONS env var):
+--   - OpenAI text-embedding-3-small  → 1536
+--   - OpenAI text-embedding-3-large  → 3072
+--   - Ollama nomic-embed-text        → 768
+--   - DeepSeek embeddings            → 1024
+--
 -- Run this BEFORE starting the application with STORE_TYPE=postgres
+-- if you prefer manual schema management.
 -- ============================================================
 
 -- 1. Enable pgvector extension
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- 2. Knowledge base table (mirrors Mongo knowledge_base collection)
+--    Replace 1024 with your model's dimension if different.
 CREATE TABLE IF NOT EXISTS knowledge_base (
     id          BIGSERIAL PRIMARY KEY,
     content     TEXT        NOT NULL,
-    embedding   VECTOR(1536) NOT NULL,
+    embedding   VECTOR(1024) NOT NULL,  -- adjust to EMBED_DIMENSIONS
     metadata    JSONB       NOT NULL DEFAULT '{}'::jsonb,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

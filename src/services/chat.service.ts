@@ -1,24 +1,11 @@
-import { chatModel } from '@ai/chat.model';
-import { searchDocuments } from '@services/vector.service';
+import { ai } from '@ai';
+import { documents } from '@services/document.service';
 import { logger } from '@utils/log.util';
-import type { ChatResponse, SearchFilters, SourceReference, SearchResult } from '@app-types/index';
-
-/** System prompt template for the RAG chain */
-const SYSTEM_PROMPT = `You are a helpful assistant that answers questions based on meeting transcripts, distribution list information, and PDF documents from our organization.
-
-Use ONLY the following context to answer the question. If the context doesn't contain enough information to answer, say "I don't have enough information to answer that question."
-
-Always cite which meeting or distribution list your answer comes from.
-
-Context:
-{context}`;
+import type { ChatResponse, SourceReference } from '@app-types/chat.types';
+import type { SearchFilters, SearchResult } from '@app-types/search.types';
 
 /**
- * Execute a RAG query: search vector store → build prompt → call LLM → return answer with sources.
- *
- * @param query - The user's question
- * @param filters - Optional search filters (source_type, date range, etc.)
- * @returns ChatResponse with answer text and source references
+ * Execute a RAG query: search vector store → build context → call LLM → return answer with sources.
  */
 export async function chat(
     query: string,
@@ -27,9 +14,9 @@ export async function chat(
     logger.info({ query, filters }, 'Processing chat query');
 
     // 1. Retrieve relevant documents
-    const searchResults = await searchDocuments(query, {
+    const searchResults = await documents.search(query, {
         limit: 5,
-        minScore: 0.7,
+        min_score: 0.2,
         filter: filters,
     });
 
@@ -57,36 +44,17 @@ export async function chat(
         })
         .join('\n\n');
 
-    // 3. Build prompt and call LLM
-    const systemMessage = SYSTEM_PROMPT.replace('{context}', context);
-
-    const response = await chatModel.invoke([
-        { role: 'system', content: systemMessage },
-        { role: 'user', content: query },
-    ]);
-
-    const answer =
-        typeof response.content === 'string'
-            ? response.content
-            : JSON.stringify(response.content);
+    // 3. Call LLM with context
+    const answer = await ai.chat.invoke(query, context);
 
     // 4. Build source references
-    const sources = buildSourceReferences(searchResults);
+    const sources = build_source_references(searchResults);
 
-    logger.info(
-        { sourcesCount: sources.length },
-        'Chat query completed',
-    );
-
+    logger.info({ sourcesCount: sources.length }, 'Chat query completed');
     return { answer, sources };
 }
 
-/**
- * Build source references from search results for the chat response.
- * @param results - The vector search results
- * @returns Array of SourceReference
- */
-function buildSourceReferences(results: SearchResult[]): SourceReference[] {
+function build_source_references(results: SearchResult[]): SourceReference[] {
     return results.map((result) => {
         const meta = result.document.metadata;
 

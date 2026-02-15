@@ -1,33 +1,44 @@
 import { env } from '@config/env';
 import type { Store } from '@store/store.interface';
-import { MongoStore } from '@store/mongo.store';
-import { PgStore } from '@store/pg.store';
+import { MongoStore } from '@store/mongo/mongo.store';
+import { PGStore } from '@store/pg/pg.store';
 import { logger } from '@utils/log.util';
 
-let store: Store | null = null;
+let instance: Store | null = null;
 
 /**
  * Get the singleton Store instance.
- *
- * Returns either MongoStore or PgStore based on the `STORE_TYPE` env var.
- * The store is created once and reused for the lifetime of the process.
- *
- * @returns The Store instance
+ * Returns MongoStore or PgStore based on `STORE_TYPE` env var.
  */
-export function getStore(): Store {
-    if (!store) {
-        const storeType = env.STORE_TYPE;
-
-        if (storeType === 'postgres') {
-            store = new PgStore();
+export function get_store(): Store {
+    if (!instance) {
+        if (env.STORE_TYPE === 'postgres') {
+            instance = new PGStore();
             logger.info('Using PostgreSQL store');
         } else {
-            store = new MongoStore();
+            instance = new MongoStore();
             logger.info('Using MongoDB store');
         }
     }
-    return store;
+    return instance;
 }
 
-/** Re-export the Store interface for convenience */
-export type { Store } from '@store/store.interface';
+/**
+ * Store namespace — lifecycle + accessor for the singleton store.
+ *
+ * Usage:
+ *   import { store } from '@store';
+ *   await store.connect();
+ *   await store.setup(ai.embed.dimensions);
+ *   const vs = store.get_vector_store('kb');
+ */
+export const store = {
+    connect: () => get_store().connect(),
+    close: () => get_store().close(),
+    setup: (dimensions: number) => get_store().setup(dimensions),
+    get_vector_store: (name: string) => get_store().get_vector_store(name),
+    get_meta_store: <T extends Record<string, unknown>>(name: string) =>
+        get_store().get_meta_store<T>(name),
+};
+
+export type { Store, VectorStore, MetaStore } from '@store/store.interface';

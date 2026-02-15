@@ -1,23 +1,23 @@
 import { Elysia, t } from 'elysia';
-import { ingestTranscripts, ingestDistributionLists } from '@services/ingest.service';
+import { env } from '@config/env';
+import { ingestion } from '@services/ingestion';
+import { AzureSourceDisabledError } from '@errors/ai.error';
 import { logger } from '@utils/log.util';
 
 /**
  * Trigger API plugin.
  * Provides manual ingestion trigger endpoints.
  *
- * Routes:
- * - POST /api/trigger/transcripts — trigger transcript ingestion
- * - POST /api/trigger/dls — trigger distribution list ingestion
+ * When AZURE_SOURCE is not Y, transcript and DL endpoints return 503.
  */
-export const triggerApi = new Elysia({ prefix: '/api/trigger' })
+export const api$trigger = new Elysia({ prefix: '/api/trigger' })
     .post(
         '/transcripts',
         async ({ body }) => {
+            if (!env.AZURE_SOURCE) throw new AzureSourceDisabledError('Transcript ingestion');
             logger.info({ since: body?.since }, 'Manual transcript ingestion triggered');
-
             const since = body?.since ? new Date(body.since) : undefined;
-            const result = await ingestTranscripts(since ? { since } : undefined);
+            const result = await ingestion.transcripts.run(since ? { since } : undefined);
             return result;
         },
         {
@@ -41,9 +41,9 @@ export const triggerApi = new Elysia({ prefix: '/api/trigger' })
     .post(
         '/dls',
         async () => {
+            if (!env.AZURE_SOURCE) throw new AzureSourceDisabledError('Distribution list ingestion');
             logger.info('Manual DL ingestion triggered');
-
-            const result = await ingestDistributionLists();
+            const result = await ingestion.dls.run();
             return result;
         },
         {

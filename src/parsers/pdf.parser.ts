@@ -1,23 +1,36 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const pdfParse = require('pdf-parse');
-import type { KnowledgeDocument } from '@app-types/index';
+import type { KnowledgeDocument } from '@app-types/document.types';
+import type { Parser } from '@parsers/parser.interface';
+import type { PdfExtractResult } from '@extractors/pdf/pdf.extractor';
+import { chunk_text } from '@parsers/text_chunker';
+import { ParserNotSupportedError } from '@errors/parse.error';
 
-/** Configuration for PDF chunking */
-const CHUNK_SIZE_CHARS = 2000;
-const CHUNK_OVERLAP_CHARS = 200;
+/**
+ * PDF parser — converts extracted PDF data into chunked KnowledgeDocuments.
+ * Uses the shared text-chunker for overlapping chunk creation.
+ */
+export class PDFParser implements Parser<PdfExtractResult & { file_id: string }> {
+    /** Parse a PDF extract result into chunked documents */
+    parse(raw: PdfExtractResult & { file_id: string }): KnowledgeDocument[] {
+        // parse_pdf is async, so we need a sync wrapper.
+        // The actual parsing is delegated to parse_pdf below.
+        // This class method is a structural placeholder — consumers
+        // should use parse_pdf() directly for async PDF parsing.
+        throw new ParserNotSupportedError('PDFParser.parse()', 'parse_pdf()');
+    }
+}
 
 /**
  * Parse a PDF buffer into chunked KnowledgeDocuments.
- *
- * Extracts text from all pages, then splits into overlapping chunks
- * of ~2000 characters to ensure good embedding quality.
+ * Extracts text from all pages, then splits into overlapping chunks.
  *
  * @param pdfBuffer - The raw PDF file as a Buffer
  * @param fileId - The file record ID for metadata reference
  * @param filename - Original filename for metadata
  * @returns Array of KnowledgeDocument chunks with PDF metadata
  */
-export async function parsePdf(
+export async function parse_pdf(
     pdfBuffer: Buffer,
     fileId: string,
     filename: string,
@@ -30,71 +43,19 @@ export async function parsePdf(
         return [];
     }
 
-    const chunks = chunkText(fullText, totalPages);
+    const chunks = chunk_text(fullText, { chunk_size: 1000, chunk_overlap: 200 });
+    const avgCharsPerPage = Math.max(fullText.length / Math.max(totalPages, 1), 500);
 
-    return chunks.map((chunk, index) => ({
+    return chunks.map((chunk) => ({
         content: chunk.text,
         metadata: {
             source_type: 'pdf' as const,
             pdf_filename: filename,
             pdf_file_id: fileId,
-            page_start: chunk.estimatedPageStart,
-            page_end: chunk.estimatedPageEnd,
+            page_start: Math.floor((chunk.start_char / fullText.length) * (fullText.length / avgCharsPerPage)) + 1,
+            page_end: Math.floor((chunk.end_char / fullText.length) * (fullText.length / avgCharsPerPage)) + 1,
             total_pages: totalPages,
-            chunk_index: index,
+            chunk_index: chunk.index,
         },
     }));
-}
-
-/** A text chunk with estimated page range */
-interface TextChunk {
-    text: string;
-    estimatedPageStart: number;
-    estimatedPageEnd: number;
-}
-
-/**
- * Split text into overlapping chunks of ~CHUNK_SIZE_CHARS.
- * Avoids splitting mid-sentence by finding the nearest sentence boundary.
- *
- * @param text - Full extracted text
- * @returns Array of TextChunk with estimated page ranges
- */
-function chunkText(text: string, totalPages: number): TextChunk[] {
-    const chunks: TextChunk[] = [];
-    const avgCharsPerPage = Math.max(text.length / Math.max(totalPages, 1), 500);
-    let start = 0;
-
-    while (start < text.length) {
-        let end = Math.min(start + CHUNK_SIZE_CHARS, text.length);
-
-        // Try to find a sentence boundary near the chunk end
-        if (end < text.length) {
-            const searchRegion = text.substring(end - 100, end + 100);
-            const sentenceEnd = searchRegion.search(/[.!?]\s/);
-            if (sentenceEnd !== -1) {
-                end = end - 100 + sentenceEnd + 2;
-            }
-        }
-
-        const chunkText = text.substring(start, end).trim();
-        if (chunkText.length > 0) {
-            // Estimate page numbers based on character position
-            const totalChars = text.length;
-            const estPageStart = Math.floor((start / totalChars) * (totalChars / avgCharsPerPage)) + 1;
-            const estPageEnd = Math.floor((end / totalChars) * (totalChars / avgCharsPerPage)) + 1;
-
-            chunks.push({
-                text: chunkText,
-                estimatedPageStart: estPageStart,
-                estimatedPageEnd: estPageEnd,
-            });
-        }
-
-        // Advance; if overlap would cause no progress, skip it
-        const nextStart = end - CHUNK_OVERLAP_CHARS;
-        start = nextStart > start ? nextStart : end;
-    }
-
-    return chunks;
 }

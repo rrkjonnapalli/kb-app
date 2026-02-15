@@ -1,10 +1,5 @@
 import { Elysia, t } from 'elysia';
-import {
-    createFileRecord,
-    getFileRecord,
-    processPdfAsync,
-    downloadPdf,
-} from '@services/pdf.ingest.service';
+import { ingestion } from '@services/ingestion';
 import { logger } from '@utils/log.util';
 
 /**
@@ -16,19 +11,18 @@ import { logger } from '@utils/log.util';
  * - POST /api/pdf/upload — ingest an uploaded PDF file (async)
  * - GET  /api/pdf/:id    — get the processing status of a PDF
  */
-export const pdfApi = new Elysia({ prefix: '/api/pdf' })
+export const api$pdf = new Elysia({ prefix: '/api/pdf' })
     .post(
         '/url',
         async ({ body }) => {
             const { url, filename } = body;
-            const resolvedFilename = filename || extractFilename(url);
+            const resolvedFilename = filename || extract_filename(url);
 
-            // Create file record
-            const fileId = await createFileRecord(resolvedFilename, 'url', url);
+            const fileId = await ingestion.pdf.create_file_record(resolvedFilename, 'url', url);
 
-            // Fire and forget — do NOT await
-            downloadPdf(url)
-                .then((buffer) => processPdfAsync(buffer, fileId, resolvedFilename))
+            // Fire and forget
+            ingestion.pdf.download_pdf(url)
+                .then((buffer) => ingestion.pdf.run(buffer, fileId, resolvedFilename))
                 .catch((err) => {
                     logger.error({ fileId, url, error: err }, 'PDF URL ingestion failed');
                 });
@@ -37,7 +31,7 @@ export const pdfApi = new Elysia({ prefix: '/api/pdf' })
                 file_id: fileId,
                 filename: resolvedFilename,
                 status: 'pending',
-                message: 'PDF ingestion started. Use GET /api/pdf/:id to check status.',
+                message: 'PDF ingestion started. Use GET /api/pdf/:file_id to check status.',
             };
         },
         {
@@ -50,7 +44,7 @@ export const pdfApi = new Elysia({ prefix: '/api/pdf' })
             detail: {
                 summary: 'Ingest PDF from URL',
                 description:
-                    'Download a PDF from the given URL and ingest it into the knowledge base. Processing happens asynchronously — returns immediately with a file_id to track status.',
+                    'Download a PDF from the given URL and ingest it into the knowledge base. Processing happens asynchronously.',
                 tags: ['PDF'],
             },
         },
@@ -61,14 +55,12 @@ export const pdfApi = new Elysia({ prefix: '/api/pdf' })
             const file = body.file;
             const filename = file.name || 'uploaded.pdf';
 
-            // Create file record
-            const fileId = await createFileRecord(filename, 'upload');
+            const fileId = await ingestion.pdf.create_file_record(filename, 'upload');
 
-            // Read file into buffer and fire async processing
             const buffer = Buffer.from(await file.arrayBuffer());
 
-            // Fire and forget — do NOT await
-            processPdfAsync(buffer, fileId, filename).catch((err) => {
+            // Fire and forget
+            ingestion.pdf.run(buffer, fileId, filename).catch((err) => {
                 logger.error({ fileId, filename, error: err }, 'PDF upload ingestion failed');
             });
 
@@ -76,19 +68,17 @@ export const pdfApi = new Elysia({ prefix: '/api/pdf' })
                 file_id: fileId,
                 filename,
                 status: 'pending',
-                message: 'PDF ingestion started. Use GET /api/pdf/:id to check status.',
+                message: 'PDF ingestion started. Use GET /api/pdf/:file_id to check status.',
             };
         },
         {
             body: t.Object({
-                file: t.File({
-                    description: 'PDF file to upload and ingest',
-                }),
+                file: t.File({ description: 'PDF file to upload and ingest' }),
             }),
             detail: {
                 summary: 'Ingest uploaded PDF',
                 description:
-                    'Upload a PDF file and ingest it into the knowledge base. Processing happens asynchronously — returns immediately with a file_id to track status.',
+                    'Upload a PDF file and ingest it into the knowledge base. Processing happens asynchronously.',
                 tags: ['PDF'],
             },
         },
@@ -96,7 +86,7 @@ export const pdfApi = new Elysia({ prefix: '/api/pdf' })
     .get(
         '/:id',
         async ({ params }) => {
-            const record = await getFileRecord(params.id);
+            const record = await ingestion.pdf.get_file_record(params.id);
 
             if (!record) {
                 return { error: 'File record not found' };
@@ -125,12 +115,7 @@ export const pdfApi = new Elysia({ prefix: '/api/pdf' })
         },
     );
 
-/**
- * Extract a filename from a URL.
- * @param url - The URL to extract from
- * @returns The extracted filename or a default
- */
-function extractFilename(url: string): string {
+function extract_filename(url: string): string {
     try {
         const pathname = new URL(url).pathname;
         const segments = pathname.split('/');

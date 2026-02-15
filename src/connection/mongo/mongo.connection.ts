@@ -10,7 +10,7 @@ let db: Db | null = null;
  * Reuses the existing connection if already established.
  * @returns The connected MongoClient instance
  */
-async function getClient(): Promise<MongoClient> {
+export async function get_mongo(): Promise<MongoClient> {
     if (!client) {
         client = new MongoClient(env.MONGODB_URI);
         await client.connect();
@@ -23,9 +23,9 @@ async function getClient(): Promise<MongoClient> {
  * Get the database instance. Connects if not already connected.
  * @returns The MongoDB database instance
  */
-export async function getDb(): Promise<Db> {
+export async function get_db(): Promise<Db> {
     if (!db) {
-        const c = await getClient();
+        const c = await get_mongo();
         db = c.db(env.MONGODB_DB_NAME);
     }
     return db;
@@ -36,10 +36,10 @@ export async function getDb(): Promise<Db> {
  * @param name - The collection name
  * @returns A typed MongoDB Collection
  */
-export async function getCollection<T extends Document = Document>(
+export async function get_collection<T extends Document = Document>(
     name: string,
 ): Promise<Collection<T>> {
-    const database = await getDb();
+    const database = await get_db();
     return database.collection<T>(name);
 }
 
@@ -47,7 +47,7 @@ export async function getCollection<T extends Document = Document>(
  * Close the MongoDB connection gracefully.
  * Safe to call multiple times.
  */
-export async function closeMongo(): Promise<void> {
+export async function close_mongo(): Promise<void> {
     if (client) {
         await client.close();
         client = null;

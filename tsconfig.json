@@ -5,39 +5,34 @@
     "moduleResolution": "node",
     "baseUrl": ".",
     "paths": {
-      "@config/*": [
-        "src/config/*"
-      ],
-      "@connection/*": [
-        "src/connection/*"
-      ],
-      "@ai/*": [
-        "src/ai/*"
-      ],
-      "@api/*": [
-        "src/api/*"
-      ],
-      "@store/*": [
-        "src/store/*"
-      ],
-      "@services/*": [
-        "src/services/*"
-      ],
-      "@parsers/*": [
-        "src/parsers/*"
-      ],
-      "@app-types/*": [
-        "src/types/*"
-      ],
-      "@enums/*": [
-        "src/enums/*"
-      ],
-      "@cron/*": [
-        "src/cron/*"
-      ],
-      "@utils/*": [
-        "src/utils/*"
-      ]
+      "@config": ["src/config"],
+      "@config/*": ["src/config/*"],
+      "@connection": ["src/connection"],
+      "@connection/*": ["src/connection/*"],
+      "@ai/*": ["src/ai/*"],
+      "@ai": ["src/ai"],
+      "@api/*": ["src/api/*"],
+      "@api": ["src/api"],
+      "@store/*": ["src/store/*"],
+      "@store": ["src/store"],
+      "@services/*": ["src/services/*"],
+      "@services": ["src/services"],
+      "@extractors/*": ["src/extractors/*"],
+      "@extractors": ["src/extractors"],
+      "@parsers/*": ["src/parsers/*"],
+      "@parsers": ["src/parsers"],
+      "@mappers/*": ["src/mappers/*"],
+      "@mappers": ["src/mappers"],
+      "@app-types/*": ["src/types/*"],
+      "@app-types": ["src/types"],
+      "@enums/*": ["src/enums/*"],
+      "@enums": ["src/enums"],
+      "@cron/*": ["src/cron/*"],
+      "@cron": ["src/cron"],
+      "@utils/*": ["src/utils/*"],
+      "@utils": ["src/utils"],
+      "@errors/*": ["src/errors/*"],
+      "@errors": ["src/errors"]
     },
     "types": [
       "bun-types"
@@ -46,5 +41,6 @@
     "forceConsistentCasingInFileNames": true,
     "strict": true,
     "skipLibCheck": true
-  }
+  },
+  "exclude": ["archive"]
 }

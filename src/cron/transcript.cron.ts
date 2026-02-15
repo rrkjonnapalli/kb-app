@@ -1,23 +1,25 @@
-import { registerJob } from '@cron/scheduler';
-import { ingestTranscripts } from '@services/ingest.service';
-import { JobName } from '@enums/index';
+import { cron } from '@elysiajs/cron';
+import { ingestion } from '@services/ingestion';
+import { JobName } from '@enums/jobs.enum';
 import { logger } from '@utils/log.util';
 
 /**
- * Register the daily transcript ingestion cron job.
- * Runs daily at 2:00 AM. Fetches new transcripts since last successful sync.
+ * Transcript ingestion cron plugin.
+ * Runs daily at 2 AM — fetches new transcripts since last sync, parses, embeds, stores.
  */
-export function registerTranscriptCron(): void {
-    registerJob(
-        JobName.INGEST_TRANSCRIPTS,
-        '0 2 * * *', // Daily at 2 AM
-        async () => {
-            logger.info('Cron: starting transcript ingestion');
-            const result = await ingestTranscripts();
+export const cron$transcript = cron({
+    name: JobName.INGEST_TRANSCRIPTS,
+    pattern: '0 2 * * *',
+    async run() {
+        logger.info('Cron: starting transcript ingestion');
+        try {
+            const result = await ingestion.transcripts.run();
             logger.info(
                 { processed: result.processed, errors: result.errors },
                 'Cron: transcript ingestion complete',
             );
-        },
-    );
-}
+        } catch (error) {
+            logger.error({ job: JobName.INGEST_TRANSCRIPTS, error }, 'Cron: transcript ingestion failed');
+        }
+    },
+});
